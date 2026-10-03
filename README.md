@@ -65,3 +65,5 @@ For changes that do not add a migration, deploy with `npm run deploy`.
 ## Sharing and access
 
 Anyone with a valid private link can access that space. The link's access token is kept in the URL fragment and sent to the API as a bearer token. Treat private links as credentials. A browser may show cached space data offline, but remote changes cannot sync until the device is online.
+
+When creating a shared space, you can optionally choose a 3-32 character name using lowercase letters, numbers, and single hyphens. Names appear in the URL and must be unique. The name does not grant access; sharing still requires the complete private link.

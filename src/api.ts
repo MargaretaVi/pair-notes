@@ -7,8 +7,12 @@ export interface SharedSpaceCredentials {
   accessToken: string
 }
 
-export async function createSharedSpace(): Promise<SharedSpaceCredentials> {
-  return request<SharedSpaceCredentials>(`${API_ROOT}/spaces`, { method: 'POST' })
+export async function createSharedSpace(slug?: string): Promise<SharedSpaceCredentials> {
+  return request<SharedSpaceCredentials>(`${API_ROOT}/spaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(slug ? { slug } : {}),
+  })
 }
 
 export async function pullSpace(id: string, accessToken: string): Promise<SpaceData> {

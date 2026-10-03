@@ -87,6 +87,7 @@ function App() {
   const [syncStatus, setSyncStatus] = useState<'saved' | 'syncing' | 'offline'>('saved')
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [spaceName, setSpaceName] = useState('')
   const [shareOpen, setShareOpen] = useState(false)
   const [newNoteKind, setNewNoteKind] = useState<NoteKind | null>(null)
   const [newNoteTitle, setNewNoteTitle] = useState('')
@@ -156,7 +157,7 @@ function App() {
     setBusy(true)
     setActionError('')
     try {
-      const credentials = await createRemoteSpace()
+      const credentials = await createRemoteSpace(spaceName.trim() || undefined)
       const fresh = createSpaceData(credentials.id)
       setSpaceId(credentials.id)
       setAccessToken(credentials.accessToken)
@@ -341,7 +342,12 @@ function App() {
           <p className="eyebrow">A shared space for two</p>
           <h1>Keep the little things<br /><em>in one place.</em></h1>
           <p className="welcome-copy">Notes and checklists, shared with one private link. No accounts to set up.</p>
-          <button className="primary-button create-space-button" disabled={busy} onClick={() => void createSharedSpace()}><Plus size={18} /> {busy ? 'Creating…' : 'Create a shared space'}</button>
+          <form className="create-space-form" onSubmit={(event) => { event.preventDefault(); void createSharedSpace() }}>
+            <label htmlFor="space-name">Optional space name</label>
+            <input id="space-name" aria-describedby="space-name-help" autoComplete="off" disabled={busy} maxLength={32} minLength={3} pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="e.g. weekend-plans" value={spaceName} onChange={(event) => setSpaceName(event.target.value.toLowerCase().replace(/\s+/g, '-'))} />
+            <p id="space-name-help">3–32 lowercase letters, numbers, or hyphens. It appears in the URL; the private link is still required.</p>
+            <button className="primary-button create-space-button" disabled={busy} type="submit"><Plus size={18} /> {busy ? 'Creating…' : 'Create a shared space'}</button>
+          </form>
           {actionError && <p className="field-error welcome-error" role="alert">{actionError}</p>}
           <div className="welcome-foot"><LockKeyhole size={14} /><span>Anyone with your link can view and edit.</span></div>
         </section>

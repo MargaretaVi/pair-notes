@@ -68,4 +68,26 @@ describe('nested checklist creation', () => {
     const nestedInputs = Array.from(document.querySelectorAll('input[aria-label="New checklist entry"]'))
     expect(nestedInputs.length).toBe(1)
   })
+
+  it('creates a shared space with the chosen name and keeps the token in the URL fragment', async () => {
+    window.history.replaceState({}, '', '/')
+    await act(async () => {
+      root.render(<App />)
+    })
+
+    const nameInput = document.querySelector<HTMLInputElement>('#space-name')!
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(nameInput, 'Weekend Plans')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    await act(async () => {
+      document.querySelector<HTMLFormElement>('.create-space-form')!.requestSubmit()
+    })
+
+    expect(createSharedSpace).toHaveBeenCalledWith('weekend-plans')
+    expect(window.location.search).toBe('?space=space-1')
+    expect(window.location.hash).toBe('#access=token-1')
+  })
 })

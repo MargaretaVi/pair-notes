@@ -4,12 +4,30 @@ import type { Env, StoredEntry, StoredNote, StoredSpace, SyncBody } from "./type
 const app = new Hono<{ Bindings: Env }>();
 
 app.post("/api/spaces", async (context) => {
-  const id = crypto.randomUUID();
+  let id: string = crypto.randomUUID();
+  const rawBody = await context.req.text();
+  if (rawBody.trim()) {
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return context.json({ error: "Invalid request body" }, 400);
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return context.json({ error: "Invalid request body" }, 400);
+    }
+    const slug = (body as { slug?: unknown }).slug;
+    if (slug !== undefined) {
+      if (!isValidSpaceSlug(slug)) return context.json({ error: "Use 3-32 lowercase letters, numbers, or single hyphens." }, 400);
+      id = slug;
+    }
+  }
   const accessToken = randomToken();
   const tokenHash = await hashToken(accessToken);
-  await context.env.DB.prepare(
-    "INSERT INTO spaces (id, token_hash, created_at) VALUES (?, ?, ?)",
+  const result = await context.env.DB.prepare(
+    "INSERT INTO spaces (id, token_hash, created_at) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
   ).bind(id, tokenHash, Date.now()).run();
+  if (result.meta.changes === 0) return context.json({ error: "That space name is already taken." }, 409);
   return context.json({ id, accessToken });
 });
 
@@ -177,6 +195,11 @@ function parseSortModes(value: string): Record<string, "alphabetical" | "manual"
 
 function isValidId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 100;
+}
+
+function isValidSpaceSlug(value: unknown): value is string {
+  return typeof value === "string" && value.length >= 3 && value.length <= 32
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
 }
 
 function isValidTitle(value: unknown): value is string {
