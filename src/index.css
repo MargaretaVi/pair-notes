@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
+
+:root {
+  --paper: #f1f4ef;
+  --surface: #fbfcfa;
+  --ink: #1d2b24;
+  --muted: #738078;
+  --line: #e2e8e2;
+  --line-strong: #cfd9d1;
+  --coral: #f07861;
+  --coral-dark: #d85843;
+  --mint: #dcece1;
+  --forest: #32664e;
+  --mint-strong: #498463;
+  --focus: #2f7655;
+  --body: 'DM Sans', 'Avenir Next', sans-serif;
+  --display: 'Fraunces', Georgia, serif;
+  --mono: 'DM Mono', 'SFMono-Regular', monospace;
+
+  font-family: var(--body);
+  color: var(--ink);
+  background: var(--surface);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+html { min-width: 320px; min-height: 100%; }
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+}
+
+button, input, textarea { font-family: var(--body); }
+
+button { color: inherit; }
+
+#root { min-height: 100svh; }
