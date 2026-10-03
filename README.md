@@ -1,32 +1,67 @@
-# React + TypeScript + Vite
+# Pair Notes
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Pair Notes is a shared notes and checklist app. The frontend and `/api` are served from the same Cloudflare Worker origin, while shared spaces are stored in Cloudflare D1. Local browser storage keeps a cache; creating and syncing shared spaces requires an internet connection.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+To run the API locally with a local D1 database:
+
+```sh
+npm run db:migrate:local
+npm run worker:dev
+```
+
+## Deploy to Cloudflare
+
+You need a Cloudflare account and Wrangler access. The initial deployment uses the `workers.dev` address; no custom domain is required.
+
+1. Authenticate Wrangler:
+
+  ```sh
+  npx wrangler login
+  ```
+
+2. Create the production D1 database:
+
+  ```sh
+  npx wrangler d1 create pair-notes --config wrangler.jsonc
+  ```
+
+3. Copy the database ID from Wrangler's output into the `database_id` field for the `DB` binding in `wrangler.jsonc`. This repository is configured for its provisioned production database; replace that ID if deploying into a different Cloudflare account.
+
+4. Apply the schema to the remote database:
+
+  ```sh
+  npm run db:migrate:remote
+  ```
+
+5. Run checks and deploy the Worker with its built frontend assets:
+
+  ```sh
+  npm test
+  npm run typecheck:worker
+  npm run build
+  npm run deploy
+  ```
+
+Wrangler prints the deployed `workers.dev` URL. Open it from a second device or a network other than the development network, create a shared space, and open its private link in another browser to verify that edits sync. Also check that reloading the app and rotating or deleting a link work.
+
+## Subsequent deployments
+
+After changing the database schema, apply pending migrations before deploying:
+
+```sh
+npm run db:migrate:remote
+npm run deploy
+```
+
+For changes that do not add a migration, deploy with `npm run deploy`.
+
+## Sharing and access
+
+Anyone with a valid private link can access that space. The link's access token is kept in the URL fragment and sent to the API as a bearer token. Treat private links as credentials. A browser may show cached space data offline, but remote changes cannot sync until the device is online.

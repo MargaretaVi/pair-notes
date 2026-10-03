@@ -290,7 +290,7 @@ function App() {
                   <button className="icon-button small danger-action" aria-label={`Delete ${entry.text}`} onClick={() => setData(deleteEntry(data, entry.id))}><Trash2 size={15} /></button>
                 </div>
               </div>
-              {children.length > 0 && renderEntryGroup(noteId, entry.id, depth + 1)}
+              {(children.length > 0 || addParentId === entry.id) && renderEntryGroup(noteId, entry.id, depth + 1)}
             </div>
           )
         })}

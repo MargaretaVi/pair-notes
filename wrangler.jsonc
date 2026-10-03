@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "pair-notes",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "4111429d-c32d-467d-8a1e-8e6125c8fb51",
       "migrations_dir": "worker/migrations"
     }
   ]
