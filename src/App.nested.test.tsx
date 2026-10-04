@@ -69,6 +69,43 @@ describe('nested checklist creation', () => {
     expect(nestedInputs.length).toBe(1)
   })
 
+  it('collapses nested items and reopens the branch to add another child', async () => {
+    let data = createNote(createSpaceData('space-1'), 'Groceries', 'checklist', 'note-1')
+    data = createEntry(data, 'note-1', null, 'check', 'Shopping').data
+    const parentId = data.entries[0].id
+    data = createEntry(data, 'note-1', parentId, 'check', 'Produce').data
+    data = createEntry(data, 'note-1', null, 'check', 'Loose item').data
+    localStorage.setItem('pair-notes:space-1', JSON.stringify(data))
+
+    await act(async () => root.render(<App />))
+
+    const collapseButton = document.querySelector<HTMLButtonElement>('[aria-label="Collapse children of Shopping"]')!
+    expect(collapseButton.getAttribute('aria-expanded')).toBe('true')
+    expect(document.querySelector('[aria-label="Collapse children of Loose item"]')).toBeNull()
+    expect(Array.from(document.querySelectorAll('.entry-label')).some((label) => label.textContent === 'Produce')).toBe(true)
+
+    await act(async () => collapseButton.click())
+    expect(document.querySelector('[aria-label="Expand children of Shopping"]')?.getAttribute('aria-expanded')).toBe('false')
+    expect(Array.from(document.querySelectorAll('.entry-label')).some((label) => label.textContent === 'Produce')).toBe(false)
+
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Add child to Shopping"]')?.click())
+    expect(document.querySelector('[aria-label="Collapse children of Shopping"]')?.getAttribute('aria-expanded')).toBe('true')
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="New checklist entry"]')!
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Collapse children of Shopping"]')?.click())
+    expect(Array.from(document.querySelectorAll('.entry-label')).some((label) => label.textContent === 'Produce')).toBe(false)
+    expect(document.querySelector('input[aria-label="New checklist entry"]')).toBeTruthy()
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Expand children of Shopping"]')?.click())
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      valueSetter?.call(input, 'Bananas')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      document.querySelector<HTMLFormElement>('.entry-composer')!.requestSubmit()
+    })
+
+    expect(Array.from(document.querySelectorAll('.entry-label')).some((label) => label.textContent === 'Bananas')).toBe(true)
+  })
+
   it('categorizes and groups a checkable nested item', async () => {
     const data = createNote(createSpaceData('space-1'), 'Groceries', 'checklist', 'note-1')
     const withParent = createEntry(data, 'note-1', null, 'check', 'Shopping').data

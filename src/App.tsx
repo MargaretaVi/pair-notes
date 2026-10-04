@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  ChevronDown,
   ChevronRight,
   Copy,
   FileText,
@@ -100,6 +101,7 @@ function App() {
   const [entryKind, setEntryKind] = useState<EntryKind>('check')
   const [entryDraft, setEntryDraft] = useState('')
   const [entryError, setEntryError] = useState('')
+  const [collapsedEntryIds, setCollapsedEntryIds] = useState<Set<string>>(() => new Set())
   const replacementBeforeInput = useRef<string | null>(null)
   const replacementDraft = useRef<{ originalText: string; correctedText: string } | null>(null)
   const [copied, setCopied] = useState(false)
@@ -287,14 +289,15 @@ function App() {
     }
   }
 
-  function renderEntryGroup(noteId: string, parentId: string | null, depth = 0): ReactNode {
+  function renderEntryGroup(noteId: string, parentId: string | null, depth = 0, showEntries = true): ReactNode {
     if (!data) return null
-    const entries = getEntries(data, noteId, parentId)
+    const entries = showEntries ? getEntries(data, noteId, parentId) : []
     const note = data.notes.find((item) => item.id === noteId)
     const mode = note?.sortModes[parentId ?? ROOT] ?? 'alphabetical'
     const renderEntry = (entry: (typeof entries)[number], siblings: typeof entries) => {
       const index = siblings.findIndex((item) => item.id === entry.id)
       const children = getEntries(data, noteId, entry.id)
+      const isCollapsed = collapsedEntryIds.has(entry.id)
       return (
         <div className={`entry-wrap${entry.checked ? ' is-checked' : ''}`} key={entry.id}>
           <div className="entry-row">
@@ -312,6 +315,20 @@ function App() {
               }
             }} title="Double-click to edit">{entry.text}</button>
             <div className="entry-actions">
+              {children.length > 0 && (
+                <button
+                  className="icon-button small branch-toggle"
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} children of ${entry.text}`}
+                  aria-expanded={!isCollapsed}
+                  title={`${isCollapsed ? 'Expand' : 'Collapse'} nested items`}
+                  onClick={() => setCollapsedEntryIds((current) => {
+                    const next = new Set(current)
+                    if (isCollapsed) next.delete(entry.id)
+                    else next.add(entry.id)
+                    return next
+                  })}
+                >{isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}</button>
+              )}
               {entry.originalText && (
                 <button
                   className="icon-button small"
@@ -335,13 +352,13 @@ function App() {
                   {GROCERY_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
                 </select>
               )}
-              <button className="icon-button small" aria-label={`Add child to ${entry.text}`} title="Add nested item" onClick={() => { setAddParentId(entry.id); setEntryError('') }}><Plus size={16} /></button>
+              <button className="icon-button small" aria-label={`Add child to ${entry.text}`} title="Add nested item" onClick={() => { setCollapsedEntryIds((current) => { if (!current.has(entry.id)) return current; const next = new Set(current); next.delete(entry.id); return next }); setAddParentId(entry.id); setEntryError('') }}><Plus size={16} /></button>
               <button className="icon-button small" aria-label={`Move ${entry.text} up`} disabled={index === 0} onClick={() => setData(reorderEntry(data, entry.id, siblings[index - 1]?.id ?? entry.id))}><ArrowUp size={15} /></button>
               <button className="icon-button small" aria-label={`Move ${entry.text} down`} disabled={index === siblings.length - 1} onClick={() => setData(reorderEntry(data, entry.id, siblings[index + 1]?.id ?? entry.id))}><ArrowDown size={15} /></button>
               <button className="icon-button small danger-action" aria-label={`Delete ${entry.text}`} onClick={() => setData(deleteEntry(data, entry.id))}><Trash2 size={15} /></button>
             </div>
           </div>
-          {(children.length > 0 || addParentId === entry.id) && renderEntryGroup(noteId, entry.id, depth + 1)}
+          {((children.length > 0 && !isCollapsed) || addParentId === entry.id) && renderEntryGroup(noteId, entry.id, depth + 1, !isCollapsed)}
         </div>
       )
     }
