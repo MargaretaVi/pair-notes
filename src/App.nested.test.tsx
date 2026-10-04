@@ -13,6 +13,7 @@ const { createSharedSpace, pullSpace, pushSpace, rotateSpaceLink, deleteSharedSp
     id: 'space-1',
     notes: [],
     entries: [],
+    clearedAt: 0,
   })),
   pushSpace: vi.fn(async () => undefined),
   rotateSpaceLink: vi.fn(async () => ({ id: 'space-1', accessToken: 'token-2' })),
@@ -33,6 +34,7 @@ describe('nested checklist creation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal('confirm', vi.fn(() => true))
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -43,6 +45,8 @@ describe('nested checklist creation', () => {
 
   afterEach(() => {
     act(() => root.unmount())
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
     container.remove()
     localStorage.clear()
   })
@@ -212,5 +216,112 @@ describe('nested checklist creation', () => {
     expect(createSharedSpace).toHaveBeenCalledWith('weekend-plans')
     expect(window.location.search).toBe('?space=space-1')
     expect(window.location.hash).toBe('#access=token-1')
+  })
+
+  it('retries a failed upload after a successful poll before reporting synced', async () => {
+    vi.useFakeTimers()
+    pushSpace.mockRejectedValueOnce(new Error('Temporary upload failure'))
+
+    await act(async () => root.render(<App />))
+    await act(async () => vi.advanceTimersByTimeAsync(450))
+
+    expect(document.querySelector('.sync-indicator')?.textContent).toContain('Offline')
+    expect(pushSpace).toHaveBeenCalledTimes(1)
+
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    await act(async () => vi.advanceTimersByTimeAsync(450))
+
+    expect(pushSpace).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('.sync-indicator')?.textContent).toBe('Synced just now')
+  })
+
+  it('discards cached notes when the shared space has been cleared', async () => {
+    vi.useFakeTimers()
+    const cached = createNote(createSpaceData('space-1'), 'Old test note', 'text', 'old-note')
+    localStorage.setItem('pair-notes:space-1', JSON.stringify(cached))
+    pullSpace.mockResolvedValue({ id: 'space-1', notes: [], entries: [], clearedAt: 123 })
+
+    await act(async () => root.render(<App />))
+
+    expect(JSON.parse(localStorage.getItem('pair-notes:space-1')!).notes).toEqual([])
+    await act(async () => vi.advanceTimersByTimeAsync(450))
+    expect(pushSpace).toHaveBeenCalledWith(
+      expect.objectContaining({ notes: [], entries: [], clearedAt: 123 }),
+      'token-1',
+    )
+  })
+
+  it('shows a clear error when the private link is no longer valid', async () => {
+    pullSpace.mockRejectedValueOnce(new Error('This private link is no longer valid.'))
+    localStorage.clear()
+    window.history.replaceState({}, '', '?space=space-1#access=token-1')
+
+    await act(async () => root.render(<App />))
+
+    expect(document.querySelector('.welcome-copy')?.textContent).toContain('This private link is no longer valid.')
+    expect(document.querySelector('.primary-button')?.textContent).toBe('Try again')
+  })
+
+  it('replaces the private link and updates the URL fragment', async () => {
+    const cached = createNote(createSpaceData('space-1'), 'Shared note', 'text', 'note-1')
+    localStorage.setItem('pair-notes:space-1', JSON.stringify(cached))
+    window.history.replaceState({}, '', '?space=space-1#access=token-1')
+
+    await act(async () => root.render(<App />))
+    await act(async () => document.querySelector<HTMLButtonElement>('.share-link-button')?.click())
+    await act(async () => document.querySelectorAll<HTMLButtonElement>('.share-management button')[0]?.click())
+
+    expect(rotateSpaceLink).toHaveBeenCalledWith('space-1', 'token-1')
+    expect(window.location.hash).toBe('#access=token-2')
+  })
+
+  it('ignores malformed cached space payloads instead of crashing the app', async () => {
+    localStorage.setItem('pair-notes:space-1', JSON.stringify({ id: 'space-1', notes: 'not-an-array' }))
+    window.history.replaceState({}, '', '?space=space-1#access=token-1')
+
+    await act(async () => root.render(<App />))
+
+    expect(document.body.textContent).toContain('pair notes')
+  })
+
+  it('ignores malformed remote sync payloads instead of surfacing invalid notes', async () => {
+    const cached = createNote(createSpaceData('space-1'), 'Good note', 'text', 'note-1')
+    localStorage.setItem('pair-notes:space-1', JSON.stringify(cached))
+    pullSpace.mockResolvedValueOnce({
+      id: 'space-1',
+      notes: [{
+        id: 'note-2',
+        title: 'Bad note',
+        kind: 'text',
+        body: '',
+        position: 0,
+        sortModes: {},
+        updatedAt: undefined,
+        deleted: false,
+      }] as any,
+      entries: [],
+      clearedAt: 0,
+    })
+
+    await act(async () => root.render(<App />))
+
+    expect(Array.from(document.querySelectorAll('.nav-note-title')).map((node) => node.textContent)).toEqual(['Good note'])
+  })
+
+  it('keeps text note content synchronized when the server refreshes the note body', async () => {
+    const cached = createNote(createSpaceData('space-1'), 'Draft', 'text', 'note-1')
+    localStorage.setItem('pair-notes:space-1', JSON.stringify(cached))
+    pullSpace.mockResolvedValueOnce({
+      id: 'space-1',
+      notes: [{ ...cached.notes[0], body: 'fresh remote body', updatedAt: Date.now() + 1 }] as any,
+      entries: [],
+      clearedAt: 0,
+    })
+
+    await act(async () => root.render(<App />))
+    await act(async () => {
+      const textarea = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note text"]')
+      expect(textarea?.value).toBe('fresh remote body')
+    })
   })
 })
