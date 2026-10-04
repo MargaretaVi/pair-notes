@@ -32,7 +32,9 @@ import {
   toggleEntry,
   updateEntryText,
   updateNote,
+  type ChecklistEntry,
   type EntryKind,
+  type Note,
   type NoteKind,
   type SpaceData,
 } from './model'
@@ -60,13 +62,63 @@ function readSpace(id: string | null): SpaceData | null {
   if (!id) return null
   try {
     const saved = localStorage.getItem(`${STORAGE_PREFIX}${id}`)
-    return saved ? JSON.parse(saved) as SpaceData : null
+    if (!saved) return null
+    const parsed = JSON.parse(saved) as unknown
+    return sanitizeSpaceData(parsed)
   } catch {
     return null
   }
 }
 
+function isValidSortMode(value: unknown): value is 'alphabetical' | 'manual' {
+  return value === 'alphabetical' || value === 'manual'
+}
+
+function isValidNote(value: unknown): value is Note {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const note = value as Partial<Note>
+  if (typeof note.id !== 'string') return false
+  if (typeof note.title !== 'string') return false
+  if (note.kind !== 'text' && note.kind !== 'checklist') return false
+  if (typeof note.body !== 'string') return false
+  if (typeof note.position !== 'number' || !Number.isFinite(note.position)) return false
+  if (!note.sortModes || typeof note.sortModes !== 'object' || !Object.values(note.sortModes).every(isValidSortMode)) return false
+  if (typeof note.updatedAt !== 'number') return false
+  if (note.deleted !== true && note.deleted !== false) return false
+  return true
+}
+
+function isValidEntry(value: unknown): value is ChecklistEntry {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const entry = value as Partial<ChecklistEntry>
+  if (typeof entry.id !== 'string') return false
+  if (typeof entry.noteId !== 'string') return false
+  if (entry.parentId !== null && typeof entry.parentId !== 'string') return false
+  if (entry.kind !== 'check' && entry.kind !== 'text') return false
+  if (typeof entry.text !== 'string') return false
+  if (entry.originalText !== null && typeof entry.originalText !== 'string') return false
+  if (entry.category !== null && typeof entry.category !== 'string') return false
+  if (typeof entry.categoryManual !== 'boolean') return false
+  if (typeof entry.checked !== 'boolean') return false
+  if (typeof entry.position !== 'number' || !Number.isFinite(entry.position)) return false
+  if (typeof entry.updatedAt !== 'number') return false
+  if (entry.deleted !== true && entry.deleted !== false) return false
+  return true
+}
+
+function sanitizeSpaceData(value: unknown): SpaceData | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Partial<SpaceData>
+  if (typeof record.id !== 'string' || !Array.isArray(record.notes) || !Array.isArray(record.entries)) return null
+  const notes = record.notes.filter(isValidNote)
+  const entries = record.entries.filter(isValidEntry)
+  if (typeof record.clearedAt !== 'number' && record.clearedAt !== undefined) return null
+  return { id: record.id, notes, entries, clearedAt: record.clearedAt ?? 0 }
+}
+
 function mergeSpaceData(local: SpaceData, remote: SpaceData): SpaceData {
+  const safeRemote = sanitizeSpaceData(remote as unknown) ?? local
+  if ((safeRemote.clearedAt ?? 0) > (local.clearedAt ?? 0)) return safeRemote
   let changed = false
   const merge = <T extends { id: string; updatedAt: number }>(localItems: T[], remoteItems: T[]): T[] => {
     const items = new Map(localItems.map((item) => [item.id, item]))
@@ -79,9 +131,9 @@ function mergeSpaceData(local: SpaceData, remote: SpaceData): SpaceData {
     }
     return [...items.values()]
   }
-  const notes = merge(local.notes, remote.notes)
-  const entries = merge(local.entries, remote.entries)
-  return changed ? { ...local, notes, entries } : local
+  const notes = merge(local.notes.filter(isValidNote) as Note[], safeRemote.notes.filter(isValidNote))
+  const entries = merge(local.entries.filter(isValidEntry) as ChecklistEntry[], safeRemote.entries.filter(isValidEntry))
+  return changed ? { ...local, notes, entries, clearedAt: safeRemote.clearedAt ?? local.clearedAt } : local
 }
 
 function App() {
@@ -90,7 +142,11 @@ function App() {
   const [data, setData] = useState<SpaceData | null>(() => readSpace(getSpaceId()))
   const [activeNoteId, setActiveNoteId] = useState<string | null>(() => readSpace(getSpaceId())?.notes.find((note) => !note.deleted)?.id ?? null)
   const [remoteReady, setRemoteReady] = useState(false)
-  const [syncStatus, setSyncStatus] = useState<'saved' | 'syncing' | 'offline'>('saved')
+  const [syncStatus, setSyncStatus] = useState<'saved' | 'syncing' | 'offline'>(() =>
+    getSpaceId() && getAccessToken() ? 'syncing' : 'offline',
+  )
+  const [retryPush, setRetryPush] = useState(0)
+  const pushFailed = useRef(false)
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
   const [spaceName, setSpaceName] = useState('')
@@ -123,10 +179,11 @@ function App() {
       setSyncStatus('syncing')
       try {
         const remote = await pullSpace(spaceId, accessToken)
+        const safeRemote = sanitizeSpaceData(remote as unknown) ?? createSpaceData(spaceId)
         if (!active) return
-        setData((current) => mergeSpaceData(current ?? createSpaceData(spaceId), remote))
+        setData((current) => mergeSpaceData(current ?? createSpaceData(spaceId), safeRemote))
         setRemoteReady(true)
-        setSyncStatus('saved')
+        if (pushFailed.current) setRetryPush((attempt) => attempt + 1)
         setActionError('')
       } catch (error) {
         if (!active) return
@@ -147,17 +204,20 @@ function App() {
 
   useEffect(() => {
     if (!remoteReady || !spaceId || !accessToken || !data) return
+    setSyncStatus('syncing')
     const timer = window.setTimeout(() => {
       void pushSpace(data, accessToken).then(() => {
+        pushFailed.current = false
         setSyncStatus('saved')
         setActionError('')
       }).catch((error: unknown) => {
+        pushFailed.current = true
         setSyncStatus('offline')
         setActionError(error instanceof Error ? error.message : 'Changes are saved on this device and will retry.')
       })
     }, 450)
     return () => window.clearTimeout(timer)
-  }, [remoteReady, spaceId, accessToken, data])
+  }, [remoteReady, spaceId, accessToken, data, retryPush])
 
   const notes = data?.notes.filter((note) => !note.deleted).sort((left, right) => left.position - right.position) ?? []
   const activeNote = notes.find((note) => note.id === activeNoteId) ?? notes[0] ?? null
