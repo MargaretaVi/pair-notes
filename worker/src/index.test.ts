@@ -95,10 +95,33 @@ describe("checklist category sync", () => {
     const response = await app.request("/api/sync/space-1", {
       headers: { Authorization: `Bearer ${accessToken}` },
     }, env);
-    const result = await response.json() as { entries: Array<{ originalText: string | null; category: string; categoryManual: boolean }> };
+    const result = await response.json() as { clearedAt: number; entries: Array<{ originalText: string | null; category: string; categoryManual: boolean }> };
 
     expect(response.status).toBe(200);
+    expect(result.clearedAt).toBe(0);
     expect(result.entries[0]).toMatchObject({ originalText: "Tomatos", category: "systembolaget", categoryManual: true });
+  });
+
+  it("rejects uploads from a client with a stale clear marker", async () => {
+    const hash = await tokenHash(accessToken);
+    const env = {
+      DB: {
+        prepare: vi.fn((query: string) => ({
+          bind: () => ({
+            first: async () => query.includes("cleared_at") ? { cleared_at: 123 } : { token_hash: hash },
+          }),
+        })),
+      },
+    } as unknown as Env;
+
+    const response = await app.request("/api/sync/space-1", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ clearedAt: 0, notes: [], entries: [] }),
+    }, env);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Shared space was cleared. Refresh before syncing." });
   });
 
   it("persists category data from a sync payload", async () => {

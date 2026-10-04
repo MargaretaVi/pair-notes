@@ -19,14 +19,14 @@ export async function pullSpace(id: string, accessToken: string): Promise<SpaceD
   const response = await request<SpaceData & { serverTime: number }>(`${API_ROOT}/sync/${encodeURIComponent(id)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  return { id: response.id || id, notes: response.notes, entries: response.entries }
+  return { id: response.id || id, notes: response.notes, entries: response.entries, clearedAt: response.clearedAt ?? 0 }
 }
 
 export async function pushSpace(data: SpaceData, accessToken: string): Promise<void> {
   await request<{ ok: true }>(`${API_ROOT}/sync/${encodeURIComponent(data.id)}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ notes: data.notes, entries: data.entries }),
+    body: JSON.stringify({ notes: data.notes, entries: data.entries, clearedAt: data.clearedAt ?? 0 }),
   })
 }
 

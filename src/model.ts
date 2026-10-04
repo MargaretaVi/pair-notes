@@ -48,6 +48,7 @@ export interface SpaceData {
   id: string;
   notes: Note[];
   entries: ChecklistEntry[];
+  clearedAt?: number;
 }
 
 const ROOT = "root";

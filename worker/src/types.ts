@@ -47,6 +47,7 @@ export interface StoredEntry {
 }
 
 export interface SyncBody {
+  clearedAt?: number;
   notes?: Array<{
     id: string;
     title: string;

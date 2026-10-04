@@ -41,8 +41,10 @@ app.get("/api/sync/:spaceId", async (context) => {
     context.env.DB.prepare("SELECT * FROM notes WHERE space_id = ? ORDER BY position, id").bind(spaceId).all<StoredNote>(),
     context.env.DB.prepare("SELECT * FROM entries WHERE space_id = ? ORDER BY position, id").bind(spaceId).all<StoredEntry>(),
   ]);
+  const space = await context.env.DB.prepare("SELECT cleared_at FROM spaces WHERE id = ?").bind(spaceId).first<{ cleared_at: number }>();
 
   return context.json({
+    clearedAt: space?.cleared_at ?? 0,
     notes: noteRows.results.map((note) => ({
       id: note.id,
       title: note.title,
@@ -85,6 +87,13 @@ app.put("/api/sync/:spaceId", async (context) => {
   }
   if (!Array.isArray(body.notes) || !Array.isArray(body.entries) || body.notes.length > 500 || body.entries.length > 5000) {
     return context.json({ error: "Invalid sync payload" }, 400);
+  }
+  if (body.clearedAt !== undefined && (!Number.isSafeInteger(body.clearedAt) || body.clearedAt < 0)) {
+    return context.json({ error: "Invalid sync payload" }, 400);
+  }
+  const space = await context.env.DB.prepare("SELECT cleared_at FROM spaces WHERE id = ?").bind(spaceId).first<{ cleared_at: number }>();
+  if ((body.clearedAt ?? 0) !== (space?.cleared_at ?? 0)) {
+    return context.json({ error: "Shared space was cleared. Refresh before syncing." }, 409);
   }
 
   const noteIds = new Set(body.notes.map((note) => note.id));
