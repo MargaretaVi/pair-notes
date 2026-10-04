@@ -2,6 +2,22 @@ export type NoteKind = "text" | "checklist";
 export type EntryKind = "check" | "text";
 export type SortMode = "alphabetical" | "manual";
 
+export const GROCERY_CATEGORIES = [
+  { id: "produce", label: "Produce" },
+  { id: "bakery", label: "Bakery" },
+  { id: "meat-seafood", label: "Meat & Seafood" },
+  { id: "dairy-eggs", label: "Dairy & Eggs" },
+  { id: "pantry", label: "Pantry" },
+  { id: "frozen", label: "Frozen" },
+  { id: "beverages", label: "Beverages" },
+  { id: "systembolaget", label: "Systembolaget" },
+  { id: "household", label: "Household" },
+  { id: "personal-care", label: "Personal Care" },
+  { id: "other", label: "Other" },
+] as const;
+
+export type GroceryCategory = (typeof GROCERY_CATEGORIES)[number]["id"];
+
 export interface Note {
   id: string;
   title: string;
@@ -19,6 +35,9 @@ export interface ChecklistEntry {
   parentId: string | null;
   kind: EntryKind;
   text: string;
+  originalText: string | null;
+  category: GroceryCategory | null;
+  categoryManual: boolean;
   checked: boolean;
   position: number;
   updatedAt: number;
@@ -32,6 +51,90 @@ export interface SpaceData {
 }
 
 const ROOT = "root";
+
+const CATEGORY_ALIASES: Record<Exclude<GroceryCategory, "other">, readonly string[]> = {
+  "frozen": ["frozen", "fryst", "frysta", "frystes"],
+  "meat-seafood": [
+    "meat", "chicken", "beef", "pork", "ham", "bacon", "sausage", "sausages", "fish", "salmon", "shrimp", "prawns",
+    "kött", "kyckling", "nötfärs", "fläsk", "skinka", "bacon", "korv", "korvar", "fisk", "lax", "räkor",
+  ],
+  "dairy-eggs": [
+    "milk", "oat milk", "almond milk", "butter", "cheese", "yogurt", "yoghurt", "cream", "eggs", "egg",
+    "mjölk", "havremjölk", "mandelmjölk", "smör", "ost", "yoghurt", "grädde", "ägg", "filmjölk", "fil",
+  ],
+  "bakery": [
+    "bread", "loaf", "rolls", "bun", "buns", "bagel", "bagels", "croissant", "tortillas",
+    "bröd", "limpa", "fralla", "frallor", "bulle", "bullar", "knäckebröd", "tortillabröd",
+  ],
+  "beverages": [
+    "water", "juice", "coffee", "tea", "soda", "soft drink", "beer", "wine",
+    "vatten", "juice", "kaffe", "te", "läsk", "öl", "vin", "saft",
+  ],
+  "systembolaget": [
+    "alcohol", "alcoholic", "beer", "lager", "ale", "stout", "wine", "red wine", "white wine", "sparkling wine",
+    "champagne", "prosecco", "cider", "spirits", "liquor", "vodka", "whisky", "whiskey", "rum", "gin", "brandy", "tequila", "sake",
+    "alkohol", "alkoholhaltig", "öl", "starköl", "folköl", "vin", "rödvin", "rött vin", "vitt vin", "mousserande vin",
+    "champagne", "cider", "sprit", "vodka", "whisky", "rom", "gin", "konjak", "brännvin",
+  ],
+  "household": [
+    "dish soap", "washing up liquid", "detergent", "laundry detergent", "cleaner", "cleaning spray", "sponge", "bin bags", "toilet paper", "paper towels",
+    "diskmedel", "tvättmedel", "rengöring", "rengöringsmedel", "svamp", "soppåsar", "toalettpapper", "hushållspapper",
+  ],
+  "personal-care": [
+    "shampoo", "conditioner", "toothpaste", "toothbrush", "deodorant", "soap", "shaving cream",
+    "schampo", "balsam", "tandkräm", "tandborste", "deodorant", "tvål", "raklödder",
+  ],
+  "produce": [
+    "apple", "apples", "banana", "bananas", "orange", "oranges", "lemon", "lemons", "lime", "avocado", "avocados",
+    "tomato", "tomatoes", "cucumber", "cucumbers", "carrot", "carrots", "potato", "potatoes", "onion", "onions", "garlic",
+    "lettuce", "spinach", "broccoli", "pepper", "peppers", "strawberry", "strawberries", "blueberries", "grapes", "fruit", "vegetables",
+    "äpple", "äpplen", "banan", "bananer", "apelsin", "apelsiner", "citron", "citroner", "avokado", "tomat", "tomater", "gurka", "gurkor",
+    "morot", "morötter", "potatis", "lök", "lökar", "vitlök", "sallad", "spenat", "broccoli", "paprika", "jordgubbe", "jordgubbar",
+    "blåbär", "vindruvor", "frukt", "grönsaker",
+  ],
+  "pantry": [
+    "rice", "pasta", "flour", "sugar", "salt", "peppercorns", "oil", "olive oil", "canned beans", "beans", "lentils", "oats", "cereal", "cereal",
+    "rice cakes", "crackers", "chocolate", "honey", "jam", "spices", "ketchup", "mustard",
+    "ris", "pasta", "mjöl", "socker", "salt", "olja", "olivolja", "bönor", "linser", "havregryn", "flingor", "knäckebröd",
+    "kex", "choklad", "honung", "sylt", "kryddor", "ketchup", "senap",
+  ],
+};
+
+const CATEGORY_MATCH_ORDER: readonly Exclude<GroceryCategory, "other">[] = [
+  "frozen", "systembolaget", "meat-seafood", "dairy-eggs", "bakery", "beverages", "household", "personal-care", "produce", "pantry",
+];
+
+export function suggestGroceryCategory(text: string): GroceryCategory {
+  const words = normalizeCategoryText(text).split(" ").filter(Boolean);
+  if (["non alcoholic", "alcohol free", "alcoholfree", "alkoholfri", "alkoholfritt"]
+    .some((alias) => containsPhrase(words, normalizeCategoryText(alias).split(" ")))) return "beverages";
+  for (const category of CATEGORY_MATCH_ORDER) {
+    if (CATEGORY_ALIASES[category].some((alias) => containsPhrase(words, normalizeCategoryText(alias).split(" ")))) {
+      return category;
+    }
+  }
+  return "other";
+}
+
+export function setEntryCategory(data: SpaceData, entryId: string, category: GroceryCategory): SpaceData {
+  const entry = data.entries.find((item) => item.id === entryId && !item.deleted);
+  if (!entry || entry.kind !== "check") return data;
+  return {
+    ...data,
+    entries: data.entries.map((item) => item.id === entryId
+      ? { ...item, category, categoryManual: true, updatedAt: Date.now() }
+      : item,
+    ),
+  };
+}
+
+function normalizeCategoryText(text: string): string {
+  return text.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function containsPhrase(words: string[], phrase: string[]): boolean {
+  return phrase.length > 0 && words.some((_, start) => phrase.every((word, offset) => words[start + offset] === word));
+}
 
 export function createSpaceData(id: string): SpaceData {
   return { id, notes: [], entries: [] };
@@ -90,6 +193,7 @@ export function createEntry(
   parentId: string | null,
   kind: EntryKind,
   text: string,
+  originalText: string | null = null,
 ): { data: SpaceData; error?: string } {
   const label = text.trim();
   if (!label) return { data, error: "Enter some text first." };
@@ -114,6 +218,9 @@ export function createEntry(
     parentId,
     kind,
     text: label,
+    originalText: originalText?.trim() && originalText.trim() !== label ? originalText.trim() : null,
+    category: kind === "check" ? suggestGroceryCategory(label) : null,
+    categoryManual: false,
     checked: false,
     position: mode === "manual" ? siblings.length : alphabeticalPosition(siblings, label),
     updatedAt: Date.now(),
@@ -142,7 +249,15 @@ export function updateEntryText(
   )) return { data, error: "That item is already in this list." };
 
   let entries = data.entries.map((item) =>
-    item.id === entryId ? { ...item, text: label, updatedAt: Date.now() } : item,
+    item.id === entryId ? {
+      ...item,
+      text: label,
+      originalText: null,
+      category: item.kind === "check" && !item.categoryManual
+        ? suggestGroceryCategory(label)
+        : item.category,
+      updatedAt: Date.now(),
+    } : item,
   );
   const note = data.notes.find((item) => item.id === entry.noteId);
   if (entry.kind === "check" && note?.sortModes[entry.parentId ?? ROOT] !== "manual") {
@@ -150,6 +265,12 @@ export function updateEntryText(
     entries = reorderSiblingPositions(entries, entry.noteId, entry.parentId, siblings);
   }
   return { data: { ...data, entries } };
+}
+
+export function revertEntryText(data: SpaceData, entryId: string): { data: SpaceData; error?: string } {
+  const entry = data.entries.find((item) => item.id === entryId && !item.deleted);
+  if (!entry?.originalText) return { data };
+  return updateEntryText(data, entryId, entry.originalText);
 }
 
 export function toggleEntry(data: SpaceData, entryId: string): SpaceData {

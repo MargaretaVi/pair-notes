@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Env, StoredEntry, StoredNote, StoredSpace, SyncBody } from "./types";
+import type { Env, GroceryCategory, StoredEntry, StoredNote, StoredSpace, SyncBody } from "./types";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -59,6 +59,9 @@ app.get("/api/sync/:spaceId", async (context) => {
       parentId: entry.parent_id,
       kind: entry.kind,
       text: entry.text,
+      originalText: entry.original_text,
+      category: entry.category,
+      categoryManual: entry.category_manual === 1,
       checked: entry.checked === 1,
       position: entry.position,
       updatedAt: entry.updated_at,
@@ -109,22 +112,27 @@ app.put("/api/sync/:spaceId", async (context) => {
     if (!isValidId(entry.id) || !isValidId(entry.noteId) || !noteIds.has(entry.noteId)
       || (entry.parentId !== null && !isValidId(entry.parentId)) || !["check", "text"].includes(entry.kind)
       || !isValidTitle(entry.text) || !isValidPosition(entry.position) || !isValidTimestamp(entry.updatedAt)
+      || (entry.originalText !== null && !isValidTitle(entry.originalText))
+      || !isValidCategory(entry.category) || typeof entry.categoryManual !== "boolean"
       || typeof entry.checked !== "boolean" || typeof entry.deleted !== "boolean") return null;
     return context.env.DB.prepare(`
-      INSERT INTO entries (id, space_id, note_id, parent_id, kind, text, checked, position, updated_at, deleted)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO entries (id, space_id, note_id, parent_id, kind, text, original_text, category, category_manual, checked, position, updated_at, deleted)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         note_id = excluded.note_id,
         parent_id = excluded.parent_id,
         kind = excluded.kind,
         text = excluded.text,
+        original_text = excluded.original_text,
+        category = excluded.category,
+        category_manual = excluded.category_manual,
         checked = excluded.checked,
         position = excluded.position,
         updated_at = excluded.updated_at,
         deleted = excluded.deleted
       WHERE entries.space_id = excluded.space_id AND excluded.updated_at >= entries.updated_at
-    `).bind(entry.id, spaceId, entry.noteId, entry.parentId, entry.kind, entry.text.trim(), Number(entry.checked),
-      entry.position, entry.updatedAt, Number(entry.deleted));
+    `).bind(entry.id, spaceId, entry.noteId, entry.parentId, entry.kind, entry.text.trim(), entry.originalText?.trim() ?? null, entry.category,
+      Number(entry.categoryManual), Number(entry.checked), entry.position, entry.updatedAt, Number(entry.deleted));
   });
 
   if ([...noteStatements, ...entryStatements].some((statement) => statement === null)) {
@@ -204,6 +212,10 @@ function isValidSpaceSlug(value: unknown): value is string {
 
 function isValidTitle(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 1000;
+}
+
+function isValidCategory(value: unknown): value is GroceryCategory | null {
+  return value === null || ["produce", "bakery", "meat-seafood", "dairy-eggs", "pantry", "frozen", "beverages", "systembolaget", "household", "personal-care", "other"].includes(value as GroceryCategory);
 }
 
 function isValidPosition(value: unknown): value is number {

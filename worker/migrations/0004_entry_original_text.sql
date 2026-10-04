@@ -1,0 +1,1 @@
+ALTER TABLE entries ADD COLUMN original_text TEXT;

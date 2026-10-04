@@ -5,7 +5,10 @@ import {
   createSpaceData,
   getEntries,
   reorderEntry,
+  revertEntryText,
+  setEntryCategory,
   setSortMode,
+  suggestGroceryCategory,
   updateEntryText,
 } from './model'
 
@@ -28,6 +31,49 @@ describe('checklist entries', () => {
     data = add(data, null, 'Bananas')
 
     expect(getEntries(data, 'note-1', null).map((entry) => entry.text)).toEqual(['Apples', 'Bananas', 'Pear'])
+  })
+
+  it('suggests categories for English, Swedish, and unknown item names', () => {
+    expect(suggestGroceryCategory('Tomatoes')).toBe('produce')
+    expect(suggestGroceryCategory('Mjölk')).toBe('dairy-eggs')
+    expect(suggestGroceryCategory('Blåbär')).toBe('produce')
+    expect(suggestGroceryCategory('fryst broccoli')).toBe('frozen')
+    expect(suggestGroceryCategory('Beer')).toBe('systembolaget')
+    expect(suggestGroceryCategory('Rött vin')).toBe('systembolaget')
+    expect(suggestGroceryCategory('alkoholfri öl')).toBe('beverages')
+    expect(suggestGroceryCategory('something unfamiliar')).toBe('other')
+  })
+
+  it('allows category corrections that persist when the item is renamed', () => {
+    let data = add(checklist(), null, 'Mjölk')
+    const milk = getEntries(data, 'note-1', null)[0]
+    data = setEntryCategory(data, milk.id, 'produce')
+
+    const result = updateEntryText(data, milk.id, 'Äpplen')
+
+    expect(result.data.entries[0]).toMatchObject({ category: 'produce', categoryManual: true, text: 'Äpplen' })
+  })
+
+  it('restores original text captured by autocorrect', () => {
+    const result = createEntry(checklist(), 'note-1', null, 'check', 'The apples', ' Teh apples ')
+    const entry = result.data.entries[0]
+
+    expect(entry.originalText).toBe('Teh apples')
+    const reverted = revertEntryText(result.data, entry.id)
+
+    expect(reverted.error).toBeUndefined()
+    expect(reverted.data.entries[0]).toMatchObject({ text: 'Teh apples', originalText: null })
+  })
+
+  it('categorizes nested check entries but leaves free-text uncategorized', () => {
+    let data = add(checklist(), null, 'Fruit')
+    const fruit = getEntries(data, 'note-1', null)[0]
+    data = add(data, fruit.id, 'Apples')
+    data = add(data, null, 'Shopping note', 'text')
+
+    expect(data.entries.find((entry) => entry.text === 'Fruit')?.category).toBe('produce')
+    expect(data.entries.find((entry) => entry.text === 'Apples')?.category).toBe('produce')
+    expect(data.entries.find((entry) => entry.text === 'Shopping note')?.category).toBeNull()
   })
 
   it('rejects case-insensitive duplicates after trimming in the same sibling list', () => {

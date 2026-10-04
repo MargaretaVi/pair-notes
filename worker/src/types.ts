@@ -7,6 +7,19 @@ export interface StoredSpace {
   token_hash: string;
 }
 
+export type GroceryCategory =
+  | "produce"
+  | "bakery"
+  | "meat-seafood"
+  | "dairy-eggs"
+  | "pantry"
+  | "frozen"
+  | "beverages"
+  | "systembolaget"
+  | "household"
+  | "personal-care"
+  | "other";
+
 export interface StoredNote {
   id: string;
   title: string;
@@ -24,6 +37,9 @@ export interface StoredEntry {
   parent_id: string | null;
   kind: "check" | "text";
   text: string;
+  original_text: string | null;
+  category: GroceryCategory | null;
+  category_manual: number;
   checked: number;
   position: number;
   updated_at: number;
@@ -47,6 +63,9 @@ export interface SyncBody {
     parentId: string | null;
     kind: "check" | "text";
     text: string;
+    originalText: string | null;
+    category: GroceryCategory | null;
+    categoryManual: boolean;
     checked: boolean;
     position: number;
     updatedAt: number;

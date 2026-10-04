@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -12,6 +12,7 @@ import {
   Share2,
   Sparkles,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react'
 import {
@@ -20,9 +21,13 @@ import {
   createSpaceData,
   deleteEntry,
   deleteNote,
+  GROCERY_CATEGORIES,
   getEntries,
   reorderEntry,
+  revertEntryText,
+  setEntryCategory,
   setSortMode,
+  type GroceryCategory,
   toggleEntry,
   updateEntryText,
   updateNote,
@@ -95,6 +100,8 @@ function App() {
   const [entryKind, setEntryKind] = useState<EntryKind>('check')
   const [entryDraft, setEntryDraft] = useState('')
   const [entryError, setEntryError] = useState('')
+  const replacementBeforeInput = useRef<string | null>(null)
+  const replacementDraft = useRef<{ originalText: string; correctedText: string } | null>(null)
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -191,13 +198,40 @@ function App() {
 
   function addEntry(noteId: string, parentId: string | null) {
     if (!data) return
-    const result = createEntry(data, noteId, parentId, entryKind, entryDraft)
+    const originalText = replacementDraft.current?.correctedText === entryDraft
+      ? replacementDraft.current.originalText
+      : null
+    const result = createEntry(data, noteId, parentId, entryKind, entryDraft, originalText)
     if (result.error) {
       setEntryError(result.error)
       return
     }
     setData(result.data)
     setEntryDraft('')
+    setEntryError('')
+    replacementBeforeInput.current = null
+    replacementDraft.current = null
+  }
+
+  function updateEntryDraft(value: string, inputType: string) {
+    const previousValue = entryDraft
+    const beforeReplacement = replacementBeforeInput.current
+    replacementBeforeInput.current = null
+
+    if (inputType === 'insertReplacementText') {
+      const originalText = beforeReplacement ?? previousValue
+      if (originalText.trim() && originalText.trim() !== value.trim()) {
+        replacementDraft.current = { originalText, correctedText: value }
+      }
+    } else if (replacementDraft.current) {
+      if (value.startsWith(replacementDraft.current.correctedText)) {
+        replacementDraft.current = { ...replacementDraft.current, correctedText: value }
+      } else if (value !== replacementDraft.current.originalText) {
+        replacementDraft.current = null
+      }
+    }
+
+    setEntryDraft(value)
     setEntryError('')
   }
 
@@ -258,6 +292,64 @@ function App() {
     const entries = getEntries(data, noteId, parentId)
     const note = data.notes.find((item) => item.id === noteId)
     const mode = note?.sortModes[parentId ?? ROOT] ?? 'alphabetical'
+    const renderEntry = (entry: (typeof entries)[number], siblings: typeof entries) => {
+      const index = siblings.findIndex((item) => item.id === entry.id)
+      const children = getEntries(data, noteId, entry.id)
+      return (
+        <div className={`entry-wrap${entry.checked ? ' is-checked' : ''}`} key={entry.id}>
+          <div className="entry-row">
+            {entry.kind === 'check' ? (
+              <button className="check-control" aria-label={entry.checked ? `Mark ${entry.text} incomplete` : `Complete ${entry.text}`} onClick={() => setData(toggleEntry(data, entry.id))}>
+                {entry.checked && <Check size={15} strokeWidth={3} />}
+              </button>
+            ) : <span className="text-marker" aria-hidden="true">—</span>}
+            <button className="entry-label" onDoubleClick={() => {
+              const edited = window.prompt('Edit item', entry.text)
+              if (edited !== null) {
+                const result = updateEntryText(data, entry.id, edited)
+                if (result.error) setEntryError(result.error)
+                else { setData(result.data); setEntryError('') }
+              }
+            }} title="Double-click to edit">{entry.text}</button>
+            <div className="entry-actions">
+              {entry.originalText && (
+                <button
+                  className="icon-button small"
+                  aria-label={`Revert ${entry.text} to ${entry.originalText}`}
+                  title={`Revert to "${entry.originalText}"`}
+                  onClick={() => {
+                    const result = revertEntryText(data, entry.id)
+                    if (result.error) setEntryError(result.error)
+                    else { setData(result.data); setEntryError('') }
+                  }}
+                ><Undo2 size={15} /></button>
+              )}
+              {entry.kind === 'check' && (
+                <select
+                  className="category-select"
+                  aria-label={`Category for ${entry.text}`}
+                  title="Change category"
+                  value={entry.category ?? 'other'}
+                  onChange={(event) => setData(setEntryCategory(data, entry.id, event.target.value as GroceryCategory))}
+                >
+                  {GROCERY_CATEGORIES.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+                </select>
+              )}
+              <button className="icon-button small" aria-label={`Add child to ${entry.text}`} title="Add nested item" onClick={() => { setAddParentId(entry.id); setEntryError('') }}><Plus size={16} /></button>
+              <button className="icon-button small" aria-label={`Move ${entry.text} up`} disabled={index === 0} onClick={() => setData(reorderEntry(data, entry.id, siblings[index - 1]?.id ?? entry.id))}><ArrowUp size={15} /></button>
+              <button className="icon-button small" aria-label={`Move ${entry.text} down`} disabled={index === siblings.length - 1} onClick={() => setData(reorderEntry(data, entry.id, siblings[index + 1]?.id ?? entry.id))}><ArrowDown size={15} /></button>
+              <button className="icon-button small danger-action" aria-label={`Delete ${entry.text}`} onClick={() => setData(deleteEntry(data, entry.id))}><Trash2 size={15} /></button>
+            </div>
+          </div>
+          {(children.length > 0 || addParentId === entry.id) && renderEntryGroup(noteId, entry.id, depth + 1)}
+        </div>
+      )
+    }
+    const categoryGroups = GROCERY_CATEGORIES.map((category) => ({
+      ...category,
+      entries: entries.filter((entry) => entry.kind === 'check' && entry.category === category.id),
+    })).filter((category) => category.entries.length > 0)
+    const textEntries = entries.filter((entry) => entry.kind === 'text')
     return (
       <div className={`entry-group${depth ? ' nested-group' : ''}`}>
         {depth > 0 && entries.length > 0 && (
@@ -266,35 +358,18 @@ function App() {
             <button className={mode === 'manual' ? 'selected' : ''} onClick={() => setData(setSortMode(data, noteId, parentId, 'manual'))}>Manual</button>
           </div>
         )}
-        {entries.map((entry, index) => {
-          const children = getEntries(data, noteId, entry.id)
-          return (
-            <div className={`entry-wrap${entry.checked ? ' is-checked' : ''}`} key={entry.id}>
-              <div className="entry-row">
-                {entry.kind === 'check' ? (
-                  <button className="check-control" aria-label={entry.checked ? `Mark ${entry.text} incomplete` : `Complete ${entry.text}`} onClick={() => setData(toggleEntry(data, entry.id))}>
-                    {entry.checked && <Check size={15} strokeWidth={3} />}
-                  </button>
-                ) : <span className="text-marker" aria-hidden="true">—</span>}
-                <button className="entry-label" onDoubleClick={() => {
-                  const edited = window.prompt('Edit item', entry.text)
-                  if (edited !== null) {
-                    const result = updateEntryText(data, entry.id, edited)
-                    if (result.error) setEntryError(result.error)
-                    else { setData(result.data); setEntryError('') }
-                  }
-                }} title="Double-click to edit">{entry.text}</button>
-                <div className="entry-actions">
-                  <button className="icon-button small" aria-label={`Add child to ${entry.text}`} title="Add nested item" onClick={() => { setAddParentId(entry.id); setEntryError('') }}><Plus size={16} /></button>
-                  <button className="icon-button small" aria-label={`Move ${entry.text} up`} disabled={index === 0} onClick={() => setData(reorderEntry(data, entry.id, entries[index - 1]?.id ?? entry.id))}><ArrowUp size={15} /></button>
-                  <button className="icon-button small" aria-label={`Move ${entry.text} down`} disabled={index === entries.length - 1} onClick={() => setData(reorderEntry(data, entry.id, entries[index + 1]?.id ?? entry.id))}><ArrowDown size={15} /></button>
-                  <button className="icon-button small danger-action" aria-label={`Delete ${entry.text}`} onClick={() => setData(deleteEntry(data, entry.id))}><Trash2 size={15} /></button>
-                </div>
-              </div>
-              {(children.length > 0 || addParentId === entry.id) && renderEntryGroup(noteId, entry.id, depth + 1)}
-            </div>
-          )
-        })}
+        {categoryGroups.map((category) => (
+          <section className="category-section" key={category.id}>
+            <h3>{category.label}</h3>
+            {category.entries.map((entry) => renderEntry(entry, category.entries))}
+          </section>
+        ))}
+        {textEntries.length > 0 && (
+          <section className="category-section text-entry-section">
+            <h3>Notes</h3>
+            {textEntries.map((entry) => renderEntry(entry, textEntries))}
+          </section>
+        )}
         {parentId === null && (
           <div className="root-order">
             <span>Order</span>
@@ -309,9 +384,22 @@ function App() {
               <button type="button" className={entryKind === 'text' ? 'selected' : ''} onClick={() => setEntryKind('text')}>Text</button>
             </div>
             <div className="entry-input-row">
-              <input autoFocus value={entryDraft} onChange={(event) => { setEntryDraft(event.target.value); setEntryError('') }} placeholder={entryKind === 'check' ? 'Add an item' : 'Add a text line'} aria-label="New checklist entry" />
+              <input
+                autoFocus
+                value={entryDraft}
+                spellCheck
+                autoCorrect="on"
+                onBeforeInput={(event) => {
+                  if ((event.nativeEvent as InputEvent).inputType === 'insertReplacementText') {
+                    replacementBeforeInput.current = entryDraft
+                  }
+                }}
+                onChange={(event) => updateEntryDraft(event.target.value, (event.nativeEvent as InputEvent).inputType)}
+                placeholder={entryKind === 'check' ? 'Add an item' : 'Add a text line'}
+                aria-label="New checklist entry"
+              />
               <button className="icon-button add-entry-button" type="submit" aria-label="Add entry"><Plus size={18} /></button>
-              <button className="icon-button" type="button" aria-label="Cancel adding entry" onClick={() => { setAddParentId('closed'); setEntryError('') }}><X size={18} /></button>
+              <button className="icon-button" type="button" aria-label="Cancel adding entry" onClick={() => { setAddParentId('closed'); setEntryDraft(''); setEntryError(''); replacementBeforeInput.current = null; replacementDraft.current = null }}><X size={18} /></button>
             </div>
             {entryError && <p className="field-error" role="alert">{entryError}</p>}
           </form>

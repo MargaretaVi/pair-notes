@@ -288,6 +288,9 @@
 .checklist-content { border-top: 1px solid var(--line); padding-top: 16px; }
 .checklist-intro { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: var(--text-quiet); font-size: 12px; }
 .checklist-intro span:last-child { white-space: nowrap; font: 11px var(--mono); }
+.category-section { margin-top: 12px; }
+.category-section h3 { min-height: 25px; display: flex; align-items: center; margin: 0; color: var(--text-subtle); font: 650 10px var(--mono); }
+.category-select { width: 112px; height: 27px; padding: 0 5px; border: 1px solid var(--line); border-radius: 3px; background: var(--raised); color: var(--text-tertiary); font-size: 10px; }
 .entry-group { min-width: 0; }
 .entry-wrap { min-width: 0; }
 .entry-row { min-height: 47px; display: flex; align-items: center; gap: 11px; border-bottom: 1px solid var(--line-faint); }
@@ -389,6 +392,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
   .entry-row { min-height: 48px; gap: 9px; }
   .entry-label { font-size: 13px; }
   .entry-actions { gap: 0; opacity: .82; }
+  .category-select { width: 92px; }
   .icon-button.small { width: 27px; height: 30px; }
   .nested-group { margin-left: 18px; padding-left: 10px; }
   .main-footer { min-height: 38px; padding: 0 15px; font-size: 8px; }
@@ -400,6 +404,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 @media (max-width: 390px) {
   .topbar-space { display: none; }
   .entry-actions .small:nth-of-type(3) { display: none; }
+  .category-select { width: 78px; }
   .checklist-intro { font-size: 11px; }
   .footer-lock { font-size: 8px; }
 }
